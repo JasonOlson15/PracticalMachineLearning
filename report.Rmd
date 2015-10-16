@@ -1,0 +1,111 @@
+---
+title: "Practical Machine Learning Project"
+author: "Jason Olson"
+date: "Tuesday, October 13, 2015"
+output: html_document
+---
+
+#Executive Summary
+This paper covers the process for creating a model to predict the quality of an individual dumbbell lift. The data was collected from a series of devices used to track motion and comes from the following source: http://groupware.les.inf.puc-rio.br/har. 
+
+The actual quality of the movements is categorized into the follwoing five different classifications as highlighted below:
+
+* Exactly according to the specification (Class A)
+* Throwing the elbows to the front (Class B)
+* Lifting the dumbbell only halfway (Class C)
+* Lowering the dumbbell only halfway (Class D)
+* Throwing the hips to the front (Class E)
+
+In the end a Random Forest model was used to predict which type of classification each lift had. The prediction accuracy rate was 97.88%. Based on the high level of accuracy, it was determined that we can accurate predict the quality of a dumbbell lift based on the motion data which was collected.
+
+#Question
+The specific question which will I attempt to answer in this paper is whether the approapriate activity quality (Class A-E) can be predicted based on the motion data collected in the original study.
+
+#Data Prepartion
+To get started with the anlaysis I first had to import the caret library, set the seed (to make it reproducible) and import the training and test data sets.
+
+```{r prep, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+library(caret)
+library(randomForest)
+set.seed(11111)
+
+orgTrain <- read.csv("pml-training.csv")
+orgTest <- read.csv("pml-testing.csv")
+```
+
+After taking a quick look at a summary of all the various measures, there are many which I removed to simplify the data set and get down to the core measurments. It was decided that those core measuresments which I would keep were only those that were measuring the various movements on the x, y and z axes. These were selected because it is the movement along these axes that are of interest in determining the quality of a movement. In additional many of the other measures lacked consistency and completeness across all of the samples. This whittles the the list down to 36 predictors and the one outcome class (classe).
+
+```{r dataFiltering, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+train <- orgTrain[,-c(1:36,46:59,69:83,84:112,122:150)]
+test <- orgTest[,-c(1:36,46:59,69:83,84:112,122:150)]
+
+nrow(train)
+```
+
+Due to the large number of records in the data set I am going to further divide the training set into a trainig set, a large validation set and a small validation set. This will enable me to test and get a better feel for my expected out of sample error rate prior to running against the test set.
+
+```{r setCreation, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+inTrain <- createDataPartition(y=train$classe, p=0.6, list=FALSE)
+trainTrain <- train[inTrain,]
+trainValid <- train[-inTrain,]
+
+inLarge <- createDataPartition(y=trainValid$classe, p=0.99, list=FALSE)
+trainValidLg <- trainValid[inLarge,]
+trainValidSm <- trainValid[-inLarge,]
+```
+
+#Model Generation
+The model approach that I will be using is a Random Forest. I have selected this model primarily due to its accuracy. It it quite slow but once it is generated it can quickly and accurately be used to predict for the test data set.
+
+Several different values for the ntree and mtry parameters were tried but the only thing that seemed to drastically change was the amount of time that it took to execute. Based on that I have selected to go with an ntree value of 2,000 and an mtry value of 2.
+
+```{r modelGeneration, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+modFit <- randomForest(classe ~ ., data=trainTrain, ntree=2000, mtry=2) 
+modFit
+```
+
+This model was created with an estimated error rate of 1.51% (accuracy rate of 98.49%). The next step will be to take the model and run it against the large and small validation data sets to see how the model accuracy comes out.
+
+The first will be against the large validation data set. The prediction will be run and then a confusion matrix will be run against the results in order to do some cross validation.
+
+```{r predict1, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+pred1 <- predict(modFit, trainValidLg)
+confusionMatrix(pred1,trainValidLg$classe)
+```
+
+From the results you can see that it is seeing an accuracy rate of 98.39% with a 95% confidence interval of 98.09% to 98.66%. 
+
+Next we'll run against the small validation data set as that will give a more realistic picture of what the out of sample error rate will be when we run against the 20 record test set.
+
+```{r predict2, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+pred2 <- predict(modFit, trainValidSm)
+confusionMatrix(pred2,trainValidSm$classe)
+```
+
+From this confusion matrix we can see it has a 97.37% accuracy rate with a 95% confidence interval of 90.82% to 99.68%. 
+
+As you can see in the cross validation for this prediction, there is only one value that it incorrectly predicted. If we were to do anyt98hing in the future to try and improve this model that is where I would look but a 98.68% accuracy rate is quite good and at some point I would just be overfitting.
+
+If we average the two accuracy ratings it comes out to a 97.88% accuracy rating which leaves me with a high level of confidence going into the test set. Based on that I would expect around a 2.12% error rate.
+
+#Generate Predictions
+The final step in the analysis is to run the model against the test recordset and see the results.
+
+```{r finalPredict, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+answers <- predict(modFit, test)
+answers
+```
+
+For submission purposes the predictions will be placed into a seperate file each.
+
+```{r generateFiles, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
+
